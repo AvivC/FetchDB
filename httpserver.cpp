@@ -1,11 +1,11 @@
 #include <iostream>
 
-#include "webserver.h"
+#include "webserver/webserver.h"
 #include "Socket.h"
 
 extern "C"
 {
-#include "httpserver.h"
+#include "ribbon_api.h"
 
 static RibbonApi ribbon;
 static ObjectModule* module;
