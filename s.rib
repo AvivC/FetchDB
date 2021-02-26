@@ -1,0 +1,7 @@
+import httpserver
+
+httpserver.start(
+	[
+	"/abc": {return "xxx"}
+	]
+)
