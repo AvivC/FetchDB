@@ -1,7 +1,0 @@
-import _httpserver
-
-_httpserver.start(
-	[
-	"/abc": {return "xxx"}
-	]
-)
