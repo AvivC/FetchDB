@@ -1,4 +1,6 @@
 #include <iostream>
+#include <cmath>
+#include <cassert>
 
 #include "webserver/webserver.h"
 #include "Socket.h"
@@ -7,8 +9,179 @@ extern "C"
 {
 #include "ribbon_api.h"
 
+struct ObjectInstanceHttpRequest {
+    ObjectInstance base;
+    webserver::http_request* request = nullptr;
+};
+
 static RibbonApi ribbon;
 static ObjectModule* module;
+
+static ObjectClass* http_request_class;
+
+// TODO: This shouldn't really be a module level static variable. Support multiple handlers (per port?) somehow
+static Object* handler_callable;
+
+static Value string_to_value(const std::string& string) {
+    ObjectString* string_object = ribbon.object_string_copy_from_null_terminated(string.c_str());
+    Value result;
+    result.type = VALUE_OBJECT;
+    result.as.object = reinterpret_cast<Object*>(string_object);
+    return result;
+}
+
+static Value make_value_string(const std::string& string) {
+    Value result;
+    result.type = VALUE_OBJECT;
+    result.as.object = reinterpret_cast<Object*>(ribbon.object_string_copy_from_null_terminated(string.c_str()));
+    return result;
+}
+
+static bool http_request_descriptor_get(Object* self, ValueArray args, Value* out) {
+    if (!ribbon.arguments_valid(args, "oHttpRequest oString")) {
+        return false;
+    }
+
+    Object* object = args.values[0].as.object;
+    assert(ribbon.is_instance_of_class(object, "HttpRequest"));
+    ObjectInstanceHttpRequest* request = reinterpret_cast<ObjectInstanceHttpRequest*>(object);
+    webserver::http_request* raw_request = request->request;
+    if (raw_request == nullptr) {
+        FAIL("raw_request is nullptr");
+    }
+
+    assert(ribbon.object_value_is(args.values[1], OBJECT_STRING));
+    ObjectString* attr_name = reinterpret_cast<ObjectString*>(args.values[1].as.object);
+
+    const char* attr_name_cstring = attr_name->chars;
+    const int attr_name_length = attr_name->length;
+
+    if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "method", 6)) {
+
+        *out = string_to_value(raw_request->method_.c_str());
+
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "path", 4)) {
+
+        *out = string_to_value(raw_request->path_.c_str());
+
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "params", 6)) {
+
+        ObjectTable* table = ribbon.object_table_new_empty();
+
+        const std::map<std::string, std::string>& params = raw_request->params_;
+        for (const std::pair<std::string, std::string>& entry : params) {
+            Value key = make_value_string(entry.first);
+            Value value = make_value_string(entry.second);
+            ValueArray set_key_args = ribbon.value_array_make(0, nullptr);
+            ribbon.value_array_write(&set_key_args, &key);
+            ribbon.value_array_write(&set_key_args, &value);
+            Value set_key_result;
+            ribbon.vm_call_attribute_cstring(reinterpret_cast<Object*>(table), "@set_key", set_key_args, &set_key_result);
+            // Do something with result?
+            ribbon.value_array_free(&set_key_args);
+        }
+
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "accept", 6)) {
+
+        *out = string_to_value(raw_request->accept_.c_str());
+
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "accept_language", 15)) {
+
+        *out = string_to_value(raw_request->accept_language_.c_str());
+
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "accept_encoding", 15)) {
+
+        *out = string_to_value(raw_request->accept_encoding_.c_str());
+
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "user_agent", 10)) {
+
+        *out = string_to_value(raw_request->user_agent_.c_str());
+
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "status", 6)) {
+
+        *out = string_to_value(raw_request->status_.c_str());
+
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "auth_realm", 10)) {
+
+        *out = string_to_value(raw_request->auth_realm_.c_str());
+        
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "answer", 6)) {
+
+        *out = string_to_value(raw_request->answer_.c_str());
+        
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "authentication_given", 20)) {
+
+        Value result;
+        result.type = VALUE_BOOLEAN;
+        result.as.boolean = raw_request->authentication_given_;
+        *out = result;
+        
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "username", 8)) {
+
+        *out = string_to_value(raw_request->username_.c_str());
+        
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "password", 8)) {
+
+        *out = string_to_value(raw_request->password_.c_str());
+        
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "payload", 7)) {
+
+        *out = string_to_value(raw_request->payload_.c_str());
+        
+    } else {
+
+        FAIL("HttpRequest descriptor get method received invalid attr name");
+
+    }
+
+    return true;
+}
+
+static bool http_request_descriptor_set(Object* self, ValueArray args, Value* out) {
+    if (!ribbon.arguments_valid(args, "oHttpRequest oString oString")) {
+        return false;
+    }
+
+    Object* object = args.values[0].as.object;
+    assert(ribbon.is_instance_of_class(object, "HttpRequest"));
+    ObjectInstanceHttpRequest* request = reinterpret_cast<ObjectInstanceHttpRequest*>(object);
+    webserver::http_request* raw_request = request->request;
+    if (raw_request == nullptr) {
+        FAIL("raw_request is nullptr");
+    }
+
+    assert(ribbon.object_value_is(args.values[1], OBJECT_STRING));
+    ObjectString* attr_name = reinterpret_cast<ObjectString*>(args.values[1].as.object);
+
+    assert(ribbon.object_value_is(args.values[2], OBJECT_STRING));
+    ObjectString* value = reinterpret_cast<ObjectString*>(args.values[2].as.object);
+
+    char* attr_name_cstring = attr_name->chars;
+    int attr_name_length = attr_name->length;
+
+    if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "answer", 6)) {
+        raw_request->answer_ = value->chars;
+    } else if (ribbon.cstrings_equal(attr_name_cstring, attr_name_length, "status", 6)) {
+        raw_request->status_ = value->chars;
+    } else {
+        FAIL("HttpRequest descriptor set method received invalid attr name");
+    }
+
+    out->type = VALUE_NIL;
+    out->as.number = -1;
+    return true;
+}
+
+static ObjectClass* expose_class(
+    char* name, size_t instance_size, DeallocationFunction dealloc_func,
+    GcMarkFunction gc_mark_func, ObjectFunction* init_func, void* descriptors[][2]) {
+
+    ObjectClass* klass = ribbon.object_class_native_new(name, instance_size, dealloc_func, gc_mark_func, init_func, descriptors);
+    Value klass_as_object = Value{VALUE_OBJECT};
+    klass_as_object.as.object = reinterpret_cast<Object*>(klass);
+    ribbon.object_set_attribute_cstring_key(reinterpret_cast<Object*>(module), name, klass_as_object);
+    return klass;
+}
 
 static void expose_function(char* name, int num_params, char** params, NativeFunction function) {
     // Value value = MAKE_VALUE_OBJECT(ribbon.make_native_function_with_params(name, num_params, params, function));
@@ -17,167 +190,153 @@ static void expose_function(char* name, int num_params, char** params, NativeFun
     ribbon.object_set_attribute_cstring_key((Object*) module, name, value);
 }
 
-// static ObjectClass* expose_class(
-//     char* name, size_t instance_size, DeallocationFunction dealloc_func,
-//     GcMarkFunction gc_mark_func, ObjectFunction* init_func, void* descriptors[][2]) {
-
-//     ObjectClass* klass = ribbon.object_class_native_new(name, instance_size, dealloc_func, gc_mark_func, init_func, descriptors);
-//     ribbon.object_set_attribute_cstring_key((Object*) module, name, MAKE_VALUE_OBJECT(klass));
-//     return klass;
-// }
-
 // static void request_handler(webserver::http_request* r) {
-//   Socket s = *(r->s_);
+//     /* TODO: Check function calls boolean return value    */
 
-//   std::string title;
-//   std::string body;
-//   std::string bgcolor="#ffffff";
-//   std::string links =
-//       "<p><a href='/red'>red</a> "
-//       "<br><a href='/blue'>blue</a> "
-//       "<br><a href='/form'>form</a> "
-//       "<br><a href='/auth'>authentication example</a> [use <b>rene</b> as username and <b>secretGarden</b> as password"
-//       "<br><a href='/header'>show some HTTP header details</a> "
-//       ;
+//     Value handlers_value;
+//     ribbon.object_load_attribute_cstring_key(reinterpret_cast<Object*>(module), "_handlers", &handlers_value);
 
-//   if(r->path_ == "/") {
-//     title = "Web Server Example";
-//     body  = "<h1>Welcome to Rene's Web Server</h1>"
-//             "I wonder what you're going to click"  + links;
-//   }
-//   else if (r->path_ == "/red") {
-//     bgcolor = "#ff4444";
-//     title   = "You chose red";
-//     body    = "<h1>Red</h1>" + links;
-//   }
-//   else if (r->path_ == "/blue") {
-//     bgcolor = "#4444ff";
-//     title   = "You chose blue";
-//     body    = "<h1>Blue</h1>" + links;
-//   }
-//   else if (r->path_ == "/form") {
-//     title   = "Fill a form";
+//     ObjectTable* handlers = reinterpret_cast<ObjectTable*>(handlers_value.as.object);
 
-//     body    = "<h1>Fill a form</h1>";
-//     body   += "<form action='/form'>"
-//               "<table>"
-//               "<tr><td>Field 1</td><td><input name=field_1></td></tr>"
-//               "<tr><td>Field 2</td><td><input name=field_2></td></tr>"
-//               "<tr><td>Field 3</td><td><input name=field_3></td></tr>"
-//               "</table>"
-//               "<input type=submit></form>";
+//     ObjectString* path_as_string = ribbon.object_string_copy_from_null_terminated(r->path_.c_str());
+//     Value path_as_string_value = Value{VALUE_OBJECT};
+//     path_as_string_value.as.object = reinterpret_cast<Object*>(path_as_string);
+    
+//     ValueArray path_key_args;
+//     ribbon.value_array_init(&path_key_args);
+//     ribbon.value_array_write(&path_key_args, &path_as_string_value);
+//     Value has_path;
+//     ribbon.vm_call_attribute_cstring(reinterpret_cast<Object*>(handlers), "has_key", path_key_args, &has_path);
 
+//     if (has_path.as.boolean) {
+//         Value handler_value;
+//         ribbon.vm_call_attribute_cstring(reinterpret_cast<Object*>(handlers), "@get_key", path_key_args, &handler_value);
+//         Object* handler = handler_value.as.object;
 
-//     for (std::map<std::string, std::string>::const_iterator i = r->params_.begin();
-//          i != r->params_.end();
-//          i++) {
+//         Value handler_result;
+//         ValueArray empty_handler_args = ribbon.value_array_make(0, NULL);
+//         ribbon.vm_call_object(handler, empty_handler_args, &handler_result);
+//         ribbon.value_array_free(&empty_handler_args);
 
-//       body += "<br>" + i->first + " = " + i->second;
+//         ObjectString* result = reinterpret_cast<ObjectString*>(handler_result.as.object);
+//         r->answer_ = result->chars;
+
+//     } else {
+//         r->status_ = "404 Not Found";
+//         r->answer_ = "Not found";
 //     }
 
-
-//     body += "<hr>" + links;
-
-//   }
-//   else if (r->path_ == "/auth") {
-//     if (r->authentication_given_) {
-//       if (r->username_ == "rene" && r->password_ == "secretGarden") {
-//          body = "<h1>Successfully authenticated</h1>" + links;
-//       }
-//       else {
-//          body = "<h1>Wrong username or password</h1>" + links;
-//          r->auth_realm_ = "Private Stuff";
-//       }
-//     }
-//     else {
-//       r->auth_realm_ = "Private Stuff";
-//     }
-//   }
-//   else if (r->path_ == "/header") {
-//     title   = "some HTTP header details";
-//     body    = std::string ("<table>")                                   +
-//               "<tr><td>Accept:</td><td>"          + r->accept_          + "</td></tr>" +
-//               "<tr><td>Accept-Encoding:</td><td>" + r->accept_encoding_ + "</td></tr>" +
-//               "<tr><td>Accept-Language:</td><td>" + r->accept_language_ + "</td></tr>" +
-//               "<tr><td>User-Agent:</td><td>"      + r->user_agent_      + "</td></tr>" +
-//               "</table>"                                                +
-//               links;
-//   }
-//   else {
-//     r->status_ = "404 Not Found";
-//     title      = "Wrong URL";
-//     body       = "<h1>Wrong URL</h1>";
-//     body      += "Path is : &gt;" + r->path_ + "&lt;"; 
-//   }
-
-//   r->answer_  = "<html><head><title>";
-//   r->answer_ += title;
-//   r->answer_ += "</title></head><body bgcolor='" + bgcolor + "'>";
-//   r->answer_ += body;
-//   r->answer_ += "</body></html>";
+//     ribbon.value_array_free(&path_key_args);
 // }
 
-static void request_handler(webserver::http_request* r) {
-  /* TODO: Check function calls boolean return value  */
+static void request_handler(webserver::http_request* request) {
+    Value instance_value;
+    ValueArray instantiate_request_args = ribbon.value_array_make(0, nullptr);
+    if (ribbon.vm_instantiate_class(http_request_class, instantiate_request_args, &instance_value) != CALL_RESULT_SUCCESS) {
+        FAIL("Failed to instantiate HttpRequest");
+    }
+    ribbon.value_array_free(&instantiate_request_args);
 
-  Value handlers_value;
-  ribbon.object_load_attribute_cstring_key(reinterpret_cast<Object*>(module), "_handlers", &handlers_value);
+    if (!ribbon.object_value_is(instance_value, OBJECT_INSTANCE)) {
+        FAIL("Instantiating HttpRequest returned a non-instance");
+    }
+    if (!ribbon.is_value_instance_of_class(instance_value, "HttpRequest")) {
+        FAIL("Instantiating HttpRequest seems to have returned a non-HttpRequest value");
+    }
 
-  ObjectTable* handlers = reinterpret_cast<ObjectTable*>(handlers_value.as.object);
+    ObjectInstanceHttpRequest* request_object = reinterpret_cast<ObjectInstanceHttpRequest*>(instance_value.as.object);
+    request_object->request = request;
 
-  ObjectString* path_as_string = ribbon.object_string_copy_from_null_terminated(r->path_.c_str());
-  Value path_as_string_value = Value{VALUE_OBJECT};
-  path_as_string_value.as.object = reinterpret_cast<Object*>(path_as_string);
-  
-  ValueArray path_key_args;
-  ribbon.value_array_init(&path_key_args);
-  ribbon.value_array_write(&path_key_args, &path_as_string_value);
-  Value has_path;
-  ribbon.vm_call_attribute_cstring(reinterpret_cast<Object*>(handlers), "has_key", path_key_args, &has_path);
-
-  if (has_path.as.boolean) {
-    Value handler_value;
-    ribbon.vm_call_attribute_cstring(reinterpret_cast<Object*>(handlers), "@get_key", path_key_args, &handler_value);
-    Object* handler = handler_value.as.object;
-
+    ValueArray call_handler_args = ribbon.value_array_make(0, nullptr);
+    ribbon.value_array_write(&call_handler_args, &instance_value);
     Value handler_result;
-    ValueArray empty_handler_args = ribbon.value_array_make(0, NULL);
-    ribbon.vm_call_object(handler, empty_handler_args, &handler_result);
-    ribbon.value_array_free(&empty_handler_args);
+    if (ribbon.vm_call_object(handler_callable, call_handler_args, &handler_result) != CALL_RESULT_SUCCESS) {
+        FAIL("Handler failed");
+    }
 
-    ObjectString* result = reinterpret_cast<ObjectString*>(handler_result.as.object);
-    r->answer_ = result->chars;
+    ribbon.value_array_free(&call_handler_args);
 
-  } else {
-    r->status_ = "404 Not Found";
-    r->answer_ = "Not found";
-  }
-
-  ribbon.value_array_free(&path_key_args);
+    if (handler_result.type != VALUE_NIL) {
+        FAIL("Expected handler to return nil");
+    }
 }
 
 static bool start_server_method(Object* self, ValueArray args, Value* out) {
-  ObjectTable* handlers = reinterpret_cast<ObjectTable*>(args.values[0].as.object);
-  Value handlers_value = Value{VALUE_OBJECT};
-  handlers_value.as.object = reinterpret_cast<Object*>(handlers);
+    if (args.values[0].type != VALUE_NUMBER || args.values[1].type != VALUE_OBJECT) {
+        return false;
+    }
 
-  ribbon.object_set_attribute_cstring_key(reinterpret_cast<Object*>(module), "_handlers", handlers_value);
+    const double port = args.values[0].as.number;
+    double dummy;
+    if (std::modf(port, &dummy) != 0) {
+        return false;
+    }
 
-  printf("Starting server\n");
-  webserver(8080, request_handler);
-  printf("Ending server\n");
+    handler_callable = args.values[1].as.object;
 
-  *out = Value{VALUE_NIL}; /* Value is discarded anyway, but has to be pushed */
-  out->as.number = -1;
-  return true;
+    Value handler_callable_value;
+    handler_callable_value.type = VALUE_OBJECT;
+    handler_callable_value.as.object = handler_callable;
+
+    // Save it as an attribute of the module object, otherwise GC will collect the function object
+    ribbon.object_set_attribute_cstring_key(reinterpret_cast<Object*>(module), "_handler_callable", handler_callable_value);
+
+    webserver(static_cast<unsigned int>(port), request_handler);
+
+    *out = Value{VALUE_NIL}; /* Value is discarded anyway, but has to be pushed */
+    out->as.number = -1;
+    return true;
+}
+
+// static bool start_server_method(Object* self, ValueArray args, Value* out) {
+//     ObjectTable* handlers = reinterpret_cast<ObjectTable*>(args.values[0].as.object);
+//     Value handlers_value = Value{VALUE_OBJECT};
+//     handlers_value.as.object = reinterpret_cast<Object*>(handlers);
+
+//     ribbon.object_set_attribute_cstring_key(reinterpret_cast<Object*>(module), "_handlers", handlers_value);
+
+//     printf("Starting server\n");
+//     webserver(8080, request_handler);
+//     printf("Ending server\n");
+
+//     *out = Value{VALUE_NIL}; /* Value is discarded anyway, but has to be pushed */
+//     out->as.number = -1;
+//     return true;
+// }
+
+static void http_request_class_deallocate(ObjectInstance* instance) {
+    /* Currently nothing to do here */
 }
 
 __declspec(dllexport) bool ribbon_module_init(RibbonApi api, ObjectModule* self) {
     ribbon = api;
     module = self;
   
-  char* start_function_arg_names[1] = {"handlers"};
-  expose_function("start", 1, start_function_arg_names, start_server_method); 
+    char* start_function_arg_names[2] = {"port", "handler"};
+    expose_function("start", 2, start_function_arg_names, start_server_method); 
+
+    ObjectInstance* http_request_descriptor = ribbon.object_descriptor_new_native(http_request_descriptor_get, http_request_descriptor_set);
+    void* http_request_descriptors[][2] = {
+        {static_cast<void*>(const_cast<char*>("path")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("method")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("status")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("user_agent")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("accept_encoding")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("accept_language")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("accept")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("auth_realm")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("answer")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("authentication_given")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("password")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("payload")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("username")), http_request_descriptor}, 
+        {static_cast<void*>(const_cast<char*>("params")), http_request_descriptor}, 
+        {nullptr, nullptr}
+    };
+
+    // Should we pass a constructor here?
+    http_request_class = expose_class(
+        "HttpRequest", sizeof(ObjectInstanceHttpRequest), http_request_class_deallocate, nullptr, nullptr, http_request_descriptors);
 
     return true;
 }

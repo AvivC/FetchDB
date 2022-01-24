@@ -1,0 +1,25 @@
+import webserver
+
+html = webserver.html
+head = webserver.head
+title = webserver.title
+body = webserver.body
+bold = webserver.bold
+italic = webserver.italic
+
+server = webserver.Server(8080)
+
+server.get("/", {
+	page = html(
+		head(
+			title("Ribbon for the win!")
+		) + body(
+			"This site is generated using the " + bold("Ribbon") + " based site generator"
+		)
+	)
+
+	return page
+})
+
+print("Starting web server!")
+server.start()
