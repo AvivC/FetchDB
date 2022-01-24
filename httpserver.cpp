@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+#include <mutex>
 #include <cassert>
 
 #include "webserver/webserver.h"
@@ -21,6 +22,12 @@ static ObjectClass* http_request_class;
 
 // TODO: This shouldn't really be a module level static variable. Support multiple handlers (per port?) somehow
 static Object* handler_callable;
+
+// The interpreter is of course seriously not thread safe, and it seems that the webserver C++ library
+// we're using starts a new thread per request. This seemingly causes code to run concurrently in the interpreter
+// and we promptly crash.
+// This static global mutex is probably no the best solution, but hopefully it's good enough.
+static std::mutex mutex;
 
 static Value string_to_value(const std::string& string) {
     ObjectString* string_object = ribbon.object_string_copy_from_null_terminated(string.c_str());
@@ -230,6 +237,8 @@ static void expose_function(char* name, int num_params, char** params, NativeFun
 // }
 
 static void request_handler(webserver::http_request* request) {
+    std::lock_guard<std::mutex> lock(mutex);
+
     Value instance_value;
     ValueArray instantiate_request_args = ribbon.value_array_make(0, nullptr);
     if (ribbon.vm_instantiate_class(http_request_class, instantiate_request_args, &instance_value) != CALL_RESULT_SUCCESS) {

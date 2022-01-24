@@ -1,0 +1,61 @@
+import _httpserver
+import utils
+
+# NOTE: currently there must only ever exist one instance of this, because of limitations of the native
+# _httpserver module (it currently stores everything on static module level)
+
+KeyValueStore = class {
+    @init = { | persistent |
+        self._table = []
+    }
+
+    start = {
+        _httpserver.start(8080, { | request |
+            print("Received " + request.method + " request for path: " + request.path)
+            path = utils.split_string(request.path, "/")
+
+            if request.method == "GET" {
+
+                store = self._table
+                exists = true
+
+                for segment in path {
+                    if store.has_key(segment) {
+                        store = store[segment]
+                    } else {
+                        exists = false
+                    }
+                }
+
+                if exists {
+                    request.answer = store
+                    request.status = "202 OK"
+                } else {
+                    request.status = "404 Not Found"
+                }
+
+            } elsif request.method == "POST" {
+                
+                store = self._table
+                # Don't iterate over the last part
+                for i in utils.range(0, path.length() - 1) {
+                    segment = path[i]
+                    if not store.has_key(segment) {
+                        store[segment] = []
+                    }
+                    store = store[segment]
+                }
+
+                store[path[path.length() - 1]] = request.payload
+
+                request.status = "201 Created"
+
+            } else {
+                print("Received non GET or POST method: this should never happen")
+            }
+        })
+    }
+}
+
+store = KeyValueStore()
+store.start()
